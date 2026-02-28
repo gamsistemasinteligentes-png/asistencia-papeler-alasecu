@@ -44,12 +44,100 @@
 
 <script>
     // DATOS REALES SUMINISTRADOS
+   <script>
     const CONFIG = {
         lat: 18.906744582104004,
         lon: -103.86840310462902,
-        rango: 5000, // metros
-        tel: "523339019091" // Formato internacional para México
+        rango: 50, // Lo subí a 50m para darte margen de prueba
+        tel: "523339019091"
     };
+
+    function init() {
+        const status = document.getElementById('status');
+        if (!navigator.geolocation) {
+            status.innerHTML = "❌ GPS no compatible";
+            return;
+        }
+
+        // Configuración de alta compatibilidad
+        const geoOptions = {
+            enableHighAccuracy: false, // Cambiado a FALSE para que conecte más rápido
+            timeout: 15000,
+            maximumAge: 10000
+        };
+
+        status.innerHTML = "⏳ Buscando satélites...";
+
+        // Intentar obtener la ubicación
+        navigator.geolocation.watchPosition(updatePos, handleError, geoOptions);
+        renderLog();
+    }
+
+    function updatePos(pos) {
+        const status = document.getElementById('status');
+        const btn = document.getElementById('btnReg');
+        
+        const latActual = pos.coords.latitude;
+        const lonActual = pos.coords.longitude;
+        
+        const d = calcularDistancia(latActual, lonActual, CONFIG.lat, CONFIG.lon);
+        window.userCoords = pos.coords;
+
+        if (d <= CONFIG.rango) {
+            status.innerHTML = `✅ DENTRO: ${Math.round(d)}m`;
+            status.style.color = "#128C7E";
+            btn.disabled = false;
+        } else {
+            status.innerHTML = `📍 FUERA: ${Math.round(d)}m`;
+            status.style.color = "#d9534f";
+            btn.disabled = true;
+        }
+    }
+
+    function handleError(err) {
+        const status = document.getElementById('status');
+        switch(err.code) {
+            case 1: status.innerHTML = "❌ Permiso denegado (Revisa ajustes)"; break;
+            case 2: status.innerHTML = "❌ Señal débil (Sal a un área despejada)"; break;
+            case 3: status.innerHTML = "❌ Tiempo agotado (Reintenta)"; break;
+            default: status.innerHTML = "❌ Error desconocido"; break;
+        }
+    }
+
+    function calcularDistancia(lat1, lon1, lat2, lon2) {
+        const R = 6371e3;
+        const p1 = lat1 * Math.PI/180, p2 = lat2 * Math.PI/180;
+        const dp = (lat2-lat1) * Math.PI/180, dl = (lon2-lon1) * Math.PI/180;
+        const a = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function registrar() {
+        const emp = document.getElementById('employee').value;
+        if (!emp) return alert("Selecciona tu nombre");
+
+        const ahora = new Date();
+        const horaCorta = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        const fechaCorta = ahora.toLocaleDateString();
+        
+        let registros = JSON.parse(localStorage.getItem('logs_secu')) || [];
+        registros.unshift(`${fechaCorta} - ${horaCorta} (${emp})`);
+        localStorage.setItem('logs_secu', JSON.stringify(registros.slice(0,5)));
+        renderLog();
+
+        const mapa = `https://www.google.com/maps?q=${window.userCoords.latitude},${window.userCoords.longitude}`;
+        const texto = encodeURIComponent(`📍 *REGISTRO PAPELERÍA LA SECU*\n👤 Empleado: ${emp}\n🕒 Hora: ${horaCorta}\n📅 Fecha: ${fechaCorta}\n🗺️ Mapa: ${mapa}\n\n✅ Validado.`);
+        
+        window.location.href = `https://wa.me/${CONFIG.tel}?text=${texto}`;
+    }
+
+    function renderLog() {
+        const logs = JSON.parse(localStorage.getItem('logs_secu')) || [];
+        document.getElementById('logBox').innerHTML = logs.map(l => `<div class="log-item">${l}</div>`).join('');
+    }
+
+    window.onload = init;
+</script>
 
     function init() {
         const status = document.getElementById('status');
@@ -122,4 +210,5 @@
 </body>
 
 </html>
+
 

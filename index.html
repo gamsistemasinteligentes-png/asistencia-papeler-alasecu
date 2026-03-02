@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Asistencia La Secu - Con Historial</title>
+    <title>Asistencia La Secu - Offline Ready</title>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://via.placeholder.com/192/1d3557/ffffff?text=Secu">
+    
     <style>
         :root { --primary: #1d3557; --success: #25D366; --error: #e63946; --bg: #f0f2f5; }
         * { box-sizing: border-box; }
@@ -11,6 +15,10 @@
         .app-container { background: white; width: 100%; max-width: 400px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; margin-bottom: 20px; }
         .header { background: var(--primary); color: white; padding: 30px 20px; text-align: center; }
         .content { padding: 25px; display: flex; flex-direction: column; gap: 15px; }
+        
+        /* Indicador Offline */
+        #offline-tag { display: none; background: #FF9500; color: white; font-size: 0.7rem; padding: 4px; text-align: center; font-weight: bold; }
+
         #geo-lock { padding: 15px; border-radius: 12px; text-align: center; font-weight: bold; background: #eee; border: 2px solid #ddd; font-size: 0.9rem; }
         .valid { background: #d4edda !important; color: #155724 !important; border-color: #c3e6cb !important; }
         #main-form { display: none; flex-direction: column; gap: 15px; }
@@ -21,7 +29,6 @@
         .btn-error { background: var(--error); }
         #obs-area { display: none; flex-direction: column; gap: 10px; margin-top: 10px; border-top: 2px solid #eee; padding-top: 15px; }
         
-        /* ESTILO DEL HISTORIAL */
         .history-container { width: 100%; max-width: 400px; padding: 10px; }
         .history-title { font-size: 0.8rem; font-weight: bold; color: #666; margin-bottom: 10px; text-transform: uppercase; }
         .log-card { background: white; padding: 12px; border-radius: 12px; margin-bottom: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--primary); }
@@ -33,10 +40,12 @@
 </head>
 <body>
 
+<div id="offline-tag">MODO SIN CONEXIÓN - Los registros se sincronizarán al recuperar señal</div>
+
 <div class="app-container">
     <div class="header">
         <h1>Papelería La Secu</h1>
-        <p>Registro de Asistencia</p>
+        <p>Asistencia Offline V2.0</p>
     </div>
 
     <div class="content">
@@ -66,8 +75,7 @@
 
 <div class="history-container">
     <div class="history-title">Mis registros recientes (30 días)</div>
-    <div id="history-list">
-        </div>
+    <div id="history-list"></div>
 </div>
 
 <script>
@@ -78,8 +86,19 @@
         tel: "523339019091"
     };
 
-    // Al cargar la página, limpiar registros viejos y mostrar historial
+    // REGISTRO DEL SERVICE WORKER (Para Offline)
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js');
+        });
+    }
+
+    // Detectar estado de internet
+    window.addEventListener('online', () => document.getElementById('offline-tag').style.display = 'none');
+    window.addEventListener('offline', () => document.getElementById('offline-tag').style.display = 'block');
+
     window.onload = () => {
+        if(!navigator.onLine) document.getElementById('offline-tag').style.display = 'block';
         limpiarRegistrosViejos();
         mostrarHistorial();
     };
@@ -87,7 +106,10 @@
     function activarSensor() {
         document.getElementById('btnStart').style.display = "none";
         document.getElementById('geo-lock').innerHTML = "🛰️ BUSCANDO UBICACIÓN...";
-        navigator.geolocation.watchPosition(verificar, error, { enableHighAccuracy: true });
+        navigator.geolocation.watchPosition(verificar, error, { 
+            enableHighAccuracy: true,
+            maximumAge: 0 
+        });
     }
 
     function verificar(pos) {
@@ -128,50 +150,37 @@
         const ahora = new Date();
         const hora = ahora.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
         const fecha = ahora.toLocaleDateString();
-        const timestamp = ahora.getTime(); // Para la limpieza de 30 días
+        const timestamp = ahora.getTime();
         const obs = document.getElementById('txtObs').value || "Sin notas";
 
-        // 1. GUARDAR EN EL HISTORIAL LOCAL
         const nuevoRegistro = { emp, tipo, hora, fecha, timestamp };
         let historial = JSON.parse(localStorage.getItem('asistencia_secu')) || [];
         historial.unshift(nuevoRegistro);
         localStorage.setItem('asistencia_secu', JSON.stringify(historial));
 
-        // 2. ACTUALIZAR VISTA
         mostrarHistorial();
 
-        // 3. ENVIAR A WHATSAPP
         let msg = `📍 *REGISTRO LA SECU*\n👤 *${emp}*\n🔘 *${tipo}*\n🕒 *${hora}*\n📅 *${fecha}*\n`;
         if(tipo === 'SALIDA') msg += `📝 *Obs:* ${obs}\n`;
-        msg += `\n✅ *Validado por Satélite.*`;
+        msg += `\n✅ *Validado Offline / GPS.*`;
 
+        // Intentar WhatsApp (si no hay red, se queda en la cola del cel)
         window.location.href = `https://wa.me/${CONFIG.tel}?text=${encodeURIComponent(msg)}`;
     }
 
     function mostrarHistorial() {
         const historial = JSON.parse(localStorage.getItem('asistencia_secu')) || [];
         const lista = document.getElementById('history-list');
-        lista.innerHTML = historial.length === 0 ? '<p style="color:gray; font-size:0.8rem">No hay registros este mes.</p>' : '';
-        
+        lista.innerHTML = historial.length === 0 ? '<p style="color:gray; font-size:0.8rem">Sin registros recientes.</p>' : '';
         historial.forEach(reg => {
             const color = reg.tipo === 'ENTRADA' ? '#25D366' : '#e63946';
-            lista.innerHTML += `
-                <div class="log-card">
-                    <div class="log-info">
-                        <span class="log-name">${reg.emp}</span>
-                        <span class="log-date">${reg.fecha} - ${reg.hora}</span>
-                    </div>
-                    <div class="log-type" style="background:${color}">${reg.tipo}</div>
-                </div>
-            `;
+            lista.innerHTML += `<div class="log-card"><div class="log-info"><span class="log-name">${reg.emp}</span><span class="log-date">${reg.fecha} - ${reg.hora}</span></div><div class="log-type" style="background:${color}">${reg.tipo}</div></div>`;
         });
     }
 
     function limpiarRegistrosViejos() {
         let historial = JSON.parse(localStorage.getItem('asistencia_secu')) || [];
         const unMesAtras = new Date().getTime() - (30 * 24 * 60 * 60 * 1000);
-        
-        // Solo dejamos los registros que tengan menos de 30 días
         const historialNuevo = historial.filter(reg => reg.timestamp > unMesAtras);
         localStorage.setItem('asistencia_secu', JSON.stringify(historialNuevo));
     }
